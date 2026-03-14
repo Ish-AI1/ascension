@@ -108,8 +108,6 @@ const STATUSES = [
 ];
 
 const BOSS_THRESHOLD = 100;
-const BOSS_HP = 300;
-const BOSS_TIMER_DAYS = 3;
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function todayKey() { return new Date().toISOString().slice(0, 10); }
@@ -126,7 +124,6 @@ function isFeatureUnlocked(pts, feature) {
 
 // ─── DAILY ENGINE ─────────────────────────────────────────────────────────────
 function computeDailyTasks(profile, history, dayIndex) {
-  const today = todayKey();
   const last7 = Object.entries(history).filter(([d]) => daysAgo(d) <= 7);
   const yesterday = Object.entries(history).find(([d]) => daysAgo(d) === 1);
   const yesterdayCount = yesterday?.[1]?.completedTasks?.length || 0;
@@ -387,7 +384,6 @@ export default function AscensionV3() {
   const [winNote, setWinNote] = useState("");
   const [editReward, setEditReward] = useState(null);
   const [rewardInput, setRewardInput] = useState("");
-  const [manualPick, setManualPick] = useState(false);
 
   useEffect(() => {
     load().then(saved => {
