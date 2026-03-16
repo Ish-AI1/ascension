@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { load, save, signInWithGoogle, signOut } from "./lib/userGameStore";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { load, save, signInWithGoogle, disconnectGoogle } from "./lib/userGameStore";
 import { supabase } from "./lib/supabaseClient";
 
 // ─── STARK MESSAGES LIBRARY ──────────────────────────────────────────────────
@@ -366,6 +366,53 @@ const OS = {
   back: { width: "100%", background: "transparent", border: "none", color: "#475569", fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginTop: 8, padding: "6px 0" },
 };
 
+function isGoogleLinked(user) {
+  const providers = user?.app_metadata?.providers || [];
+  if (Array.isArray(providers) && providers.includes("google")) return true;
+  const identities = user?.identities || [];
+  return Array.isArray(identities) && identities.some((i) => i?.provider === "google");
+}
+
+function StartScreen({ onContinueWithGoogle, onContinueWithoutAccount, loading }) {
+  return (
+    <div style={OS.root}>
+      <div style={OS.card}>
+        <div style={{ fontSize: 44, marginBottom: 14 }}>⚔️</div>
+        <div style={OS.title}>Ascension</div>
+        <div style={OS.sub}>
+          שתי אפשרויות: להתחבר עם Google (שמירה/סנכרון) או להמשיך בלי חשבון.
+        </div>
+
+        <button
+          onClick={onContinueWithGoogle}
+          disabled={loading}
+          style={{
+            ...OS.btn,
+            marginTop: 10,
+            background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
+          }}
+        >
+          המשך עם Google
+        </button>
+
+        <button
+          onClick={onContinueWithoutAccount}
+          disabled={loading}
+          style={{
+            ...OS.btn,
+            marginTop: 10,
+            background: "transparent",
+            border: "1px solid #1e293b",
+            color: "#e2e8f0",
+          }}
+        >
+          המשך בלי חשבון
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function AscensionV3() {
   const [state, setState] = useState(null);
@@ -381,6 +428,7 @@ export default function AscensionV3() {
   const [rewardInput, setRewardInput] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [user, setUser] = useState(null);
+  const [preOnboardingScreen, setPreOnboardingScreen] = useState("start"); // start | onboarding
 
   useEffect(() => {
     load().then(saved => {
@@ -422,6 +470,8 @@ export default function AscensionV3() {
     };
   }, []);
 
+  const googleLinked = useMemo(() => isGoogleLinked(user), [user]);
+
   const persist = useCallback((s) => { setState(s); save(s); }, []);
 
   const showPopup = (msg, dur = 2000) => { setPopup(msg); setTimeout(() => setPopup(null), dur); };
@@ -438,15 +488,13 @@ export default function AscensionV3() {
     }
   };
 
-  const handleSignOut = async () => {
+  const handleDisconnectGoogle = async () => {
     try {
       setAuthLoading(true);
-      await signOut();
-      // After sign-out we immediately fall back to an anonymous session
-      // via ensureSession() on the next load/save call.
-      window.location.reload();
+      await disconnectGoogle();
+      setAuthLoading(false);
     } catch (e) {
-      console.error("[auth] Sign-out failed", e);
+      console.error("[auth] Disconnect Google failed", e);
       setAuthLoading(false);
     }
   };
@@ -528,7 +576,22 @@ export default function AscensionV3() {
   };
 
   if (!loaded) return <div style={{ background: "#04040e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#f97316", fontFamily: "monospace", letterSpacing: 3 }}>INITIALIZING...</div></div>;
-  if (!state?.onboarded) return <Onboarding onComplete={handleOnboard} />;
+  if (!state?.onboarded) {
+    if (preOnboardingScreen === "start") {
+      return (
+        <StartScreen
+          loading={authLoading}
+          onContinueWithGoogle={async () => {
+            // If already linked, just continue.
+            if (googleLinked) setPreOnboardingScreen("onboarding");
+            else await handleGoogleSignIn();
+          }}
+          onContinueWithoutAccount={() => setPreOnboardingScreen("onboarding")}
+        />
+      );
+    }
+    return <Onboarding onComplete={handleOnboard} />;
+  }
 
   const status = getStatus(state.totalPoints);
   const nextStatus = getNextStatus(state.totalPoints);
@@ -556,20 +619,20 @@ export default function AscensionV3() {
       <div style={S.header}>
         <div style={S.logo}><span style={{ color: "#f97316" }}>ASCENSION</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {user ? (
+          {googleLinked ? (
             <div style={S.userBox}>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 10, color: "#64748b" }}>מחובר כ־</div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#e5e7eb", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {user.email || user.user_metadata?.full_name || "Google User"}
+                  {user?.email || user?.user_metadata?.full_name || "Google User"}
                 </div>
               </div>
               <button
-                onClick={handleSignOut}
+                onClick={handleDisconnectGoogle}
                 disabled={authLoading}
                 style={S.signOutBtn}
               >
-                יציאה
+                נתק Google
               </button>
             </div>
           ) : (

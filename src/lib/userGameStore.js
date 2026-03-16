@@ -24,8 +24,9 @@ export async function signInWithGoogle() {
   });
 }
 
-export async function signOut() {
-  return await supabase.auth.signOut();
+export async function disconnectGoogle() {
+  // Keeps the same user id + saved game data, only removes the Google identity.
+  return await supabase.auth.unlinkIdentity({ provider: "google" });
 }
 
 export async function loadUserGameData(userId) {
