@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase, assertSupabaseConfigured } from "./supabaseClient";
 
 // ─── STARK MESSAGES LIBRARY ──────────────────────────────────────────────────
 const STARK = {
@@ -210,11 +211,47 @@ function computeDailyTasks(profile, history, dayIndex) {
 }
 
 // ─── STORAGE ──────────────────────────────────────────────────────────────────
+async function ensureAnonSession() {
+  assertSupabaseConfigured();
+  if (!supabase) throw new Error("Supabase client not initialized");
+
+  const { data: existing } = await supabase.auth.getSession();
+  if (existing?.session) return existing.session;
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+  return data.session;
+}
+
 async function load() {
-  try { const r = await window.storage.get("aotl-v3"); return r ? JSON.parse(r.value) : null; } catch { return null; }
+  try {
+    const session = await ensureAnonSession();
+    const userId = session?.user?.id;
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("state")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data?.state ?? null;
+  } catch {
+    return null;
+  }
 }
 async function save(d) {
-  try { await window.storage.set("aotl-v3", JSON.stringify(d)); } catch {}
+  try {
+    const session = await ensureAnonSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    const { error } = await supabase
+      .from("users")
+      .upsert({ id: userId, state: d, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    if (error) throw error;
+  } catch {}
 }
 
 function initState() {
