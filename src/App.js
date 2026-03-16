@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { load, save, signInWithGoogle } from "./lib/userGameStore";
+import { load, save, signInWithGoogle, disconnectGoogle } from "./lib/userGameStore";
 import { supabase } from "./lib/supabaseClient";
 
 // ─── STARK MESSAGES LIBRARY ──────────────────────────────────────────────────
@@ -430,8 +430,6 @@ export default function AscensionV3() {
   const [user, setUser] = useState(null);
   const [preOnboardingScreen, setPreOnboardingScreen] = useState("start"); // start | onboarding
 
-  const FORCE_WELCOME_KEY = "ascension_force_welcome";
-
   useEffect(() => {
     load().then(saved => {
       const s = saved || initState();
@@ -463,7 +461,6 @@ export default function AscensionV3() {
       const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
         setUser(session?.user ?? null);
         setAuthLoading(false);
-        if (!session?.user) setPreOnboardingScreen("start");
       });
       sub = listener?.subscription;
     };
@@ -482,9 +479,6 @@ export default function AscensionV3() {
   const handleGoogleSignIn = async () => {
     try {
       setAuthLoading(true);
-      try {
-        localStorage.setItem(FORCE_WELCOME_KEY, "0");
-      } catch {}
       await signInWithGoogle();
       // Supabase will redirect back to the app; on reload, ensureSession()
       // will return the (now Google-linked) user and all data will stay attached.
@@ -494,16 +488,13 @@ export default function AscensionV3() {
     }
   };
 
-  const handleSignOut = async () => {
+  const handleDisconnectGoogle = async () => {
     try {
       setAuthLoading(true);
-      try {
-        localStorage.setItem(FORCE_WELCOME_KEY, "1");
-      } catch {}
-      await supabase.auth.signOut();
+      await disconnectGoogle();
       setAuthLoading(false);
     } catch (e) {
-      console.error("[auth] Sign out failed", e);
+      console.error("[auth] Disconnect Google failed", e);
       setAuthLoading(false);
     }
   };
@@ -585,29 +576,20 @@ export default function AscensionV3() {
   };
 
   if (!loaded) return <div style={{ background: "#04040e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#f97316", fontFamily: "monospace", letterSpacing: 3 }}>INITIALIZING...</div></div>;
-  if (preOnboardingScreen === "start") {
-    return (
-      <StartScreen
-        loading={authLoading}
-        onContinueWithGoogle={handleGoogleSignIn}
-        onContinueWithoutAccount={async () => {
-          try {
-            localStorage.setItem(FORCE_WELCOME_KEY, "0");
-          } catch {}
-          try {
-            setAuthLoading(true);
-            await supabase.auth.signInAnonymously();
-          } catch (e) {
-            console.error("[auth] Anonymous sign-in failed", e);
-          } finally {
-            setAuthLoading(false);
-          }
-          setPreOnboardingScreen("onboarding");
-        }}
-      />
-    );
-  }
   if (!state?.onboarded) {
+    if (preOnboardingScreen === "start") {
+      return (
+        <StartScreen
+          loading={authLoading}
+          onContinueWithGoogle={async () => {
+            // If already linked, just continue.
+            if (googleLinked) setPreOnboardingScreen("onboarding");
+            else await handleGoogleSignIn();
+          }}
+          onContinueWithoutAccount={() => setPreOnboardingScreen("onboarding")}
+        />
+      );
+    }
     return <Onboarding onComplete={handleOnboard} />;
   }
 
@@ -646,11 +628,11 @@ export default function AscensionV3() {
                 </div>
               </div>
               <button
-                onClick={handleSignOut}
+                onClick={handleDisconnectGoogle}
                 disabled={authLoading}
                 style={S.signOutBtn}
               >
-                התנתק
+                נתק Google
               </button>
             </div>
           ) : (
