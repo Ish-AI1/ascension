@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { load, save } from "./lib/userGameStore";
+import { load, save, signInWithGoogle, signOut } from "./lib/userGameStore";
+import { supabase } from "./lib/supabaseClient";
 
 // ─── STARK MESSAGES LIBRARY ──────────────────────────────────────────────────
 const STARK = {
@@ -378,6 +379,8 @@ export default function AscensionV3() {
   const [winNote, setWinNote] = useState("");
   const [editReward, setEditReward] = useState(null);
   const [rewardInput, setRewardInput] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     load().then(saved => {
@@ -402,9 +405,51 @@ export default function AscensionV3() {
     });
   }, []);
 
+  useEffect(() => {
+    let sub;
+    const init = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data?.user ?? null);
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+        setAuthLoading(false);
+      });
+      sub = listener?.subscription;
+    };
+    init();
+    return () => {
+      if (sub) sub.unsubscribe();
+    };
+  }, []);
+
   const persist = useCallback((s) => { setState(s); save(s); }, []);
 
   const showPopup = (msg, dur = 2000) => { setPopup(msg); setTimeout(() => setPopup(null), dur); };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setAuthLoading(true);
+      await signInWithGoogle();
+      // Supabase will redirect back to the app; on reload, ensureSession()
+      // will return the (now Google-linked) user and all data will stay attached.
+    } catch (e) {
+      console.error("[auth] Google sign-in failed", e);
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setAuthLoading(true);
+      await signOut();
+      // After sign-out we immediately fall back to an anonymous session
+      // via ensureSession() on the next load/save call.
+      window.location.reload();
+    } catch (e) {
+      console.error("[auth] Sign-out failed", e);
+      setAuthLoading(false);
+    }
+  };
 
   const handleOnboard = (profile) => {
     const tasks = computeDailyTasks({ priorityCats: profile.priorityCats || ["mind","focus","body"] }, {}, 0);
@@ -510,10 +555,38 @@ export default function AscensionV3() {
       {/* HEADER */}
       <div style={S.header}>
         <div style={S.logo}><span style={{ color: "#f97316" }}>ASCENSION</span></div>
-        <div style={S.chips}>
-          <div style={S.chip}><span>⚡</span><b>{state.totalPoints}</b></div>
-          {isFeatureUnlocked(state.totalPoints, "boss") && <div style={S.chip}><span style={{ color: "#a855f7" }}>🔮</span><b style={{ color: "#a855f7" }}>{state.powerShards}</b></div>}
-          <div style={S.chip}><span>⭐</span><b style={{ color: "#fbbf24" }}>{state.superStars}</b></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {user ? (
+            <div style={S.userBox}>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, color: "#64748b" }}>מחובר כ־</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#e5e7eb", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {user.email || user.user_metadata?.full_name || "Google User"}
+                </div>
+              </div>
+              <button
+                onClick={handleSignOut}
+                disabled={authLoading}
+                style={S.signOutBtn}
+              >
+                יציאה
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={authLoading}
+              style={S.googleBtn}
+            >
+              <span style={{ marginLeft: 6 }}>התחברות עם Google</span>
+              <span>🟢</span>
+            </button>
+          )}
+          <div style={S.chips}>
+            <div style={S.chip}><span>⚡</span><b>{state.totalPoints}</b></div>
+            {isFeatureUnlocked(state.totalPoints, "boss") && <div style={S.chip}><span style={{ color: "#a855f7" }}>🔮</span><b style={{ color: "#a855f7" }}>{state.powerShards}</b></div>}
+            <div style={S.chip}><span>⭐</span><b style={{ color: "#fbbf24" }}>{state.superStars}</b></div>
+          </div>
         </div>
       </div>
 
@@ -715,6 +788,9 @@ const S = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: "1px solid #0a0a1a", position: "sticky", top: 0, background: "rgba(4,4,14,0.97)", zIndex: 20 },
   logo: { fontFamily: "monospace", fontSize: 18, fontWeight: 900, letterSpacing: 3 },
   chips: { display: "flex", gap: 6 },
+  googleBtn: { background: "#0f172a", borderRadius: 999, border: "1px solid #1e293b", color: "#e2e8f0", fontSize: 11, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit" },
+  userBox: { display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", background: "#020617", borderRadius: 999, border: "1px solid #1e293b" },
+  signOutBtn: { background: "#0f172a", borderRadius: 999, border: "none", color: "#f97316", fontSize: 10, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" },
   chip: { background: "#080818", border: "1px solid #0f172a", borderRadius: 8, padding: "3px 10px", display: "flex", gap: 5, alignItems: "center", fontSize: 13 },
   starkBar: { display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 18px", background: "#06061a", borderBottom: "1px solid #0a0a1a" },
   statusCard: { margin: "14px 16px", background: "#06061a", border: "1px solid #0f172a", borderRadius: 16, padding: "16px 18px" },

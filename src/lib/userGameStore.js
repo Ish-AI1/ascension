@@ -1,10 +1,24 @@
 import { supabase } from "./supabaseClient";
 
 export async function signInWithGoogle() {
+  const { data: existing } = await supabase.auth.getSession();
+
+  // If we already have a session (typically anonymous), link Google to this user
+  // so that the same user id is preserved and all anonymous game data remains
+  // attached to the upgraded Google account.
+  if (existing?.session) {
+    return await supabase.auth.linkIdentity({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+  }
+
+  // No existing session – regular Google sign-in flow.
   return await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      // CRA runs on 3000 by default; Supabase should allow this redirect URL.
       redirectTo: window.location.origin,
     },
   });
