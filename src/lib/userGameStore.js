@@ -9,11 +9,6 @@ export async function signInWithGoogle() {
   });
 }
 
-export async function disconnectGoogle() {
-  // Keeps the same user id + saved game data, only removes the Google identity.
-  return await supabase.auth.unlinkIdentity({ provider: "google" });
-}
-
 export async function loadUserGameData(userId) {
   const { data, error } = await supabase
     .from("users")
@@ -100,9 +95,17 @@ export function scheduleSaveUserGameData(userId, gameData, delayMs = 600) {
   }, delayMs);
 }
 
+const FORCE_WELCOME_KEY = "ascension_force_welcome";
+
 async function ensureSession() {
   const { data: existing } = await supabase.auth.getSession();
   if (existing?.session) return existing.session;
+
+  // If the user explicitly signed out, don't auto-create an anonymous session.
+  // The app should show the welcome screen until the user chooses how to continue.
+  try {
+    if (localStorage.getItem(FORCE_WELCOME_KEY) === "1") return null;
+  } catch {}
 
   const { data, error } = await supabase.auth.signInAnonymously();
   if (error) throw error;
