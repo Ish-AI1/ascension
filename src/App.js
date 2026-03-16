@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { load, save, signInWithGoogle, disconnectGoogle } from "./lib/userGameStore";
+import { load, save, signInWithGoogle } from "./lib/userGameStore";
 import { supabase } from "./lib/supabaseClient";
 
 // ─── STARK MESSAGES LIBRARY ──────────────────────────────────────────────────
@@ -491,7 +491,7 @@ export default function AscensionV3() {
   const handleDisconnectGoogle = async () => {
     try {
       setAuthLoading(true);
-      await disconnectGoogle();
+      await supabase.auth.signOut();
       setAuthLoading(false);
     } catch (e) {
       console.error("[auth] Disconnect Google failed", e);

@@ -1,5 +1,7 @@
 import { supabase } from "./supabaseClient";
 
+const FORCE_WELCOME_KEY = "ascension_force_welcome";
+
 export async function signInWithGoogle() {
   return await supabase.auth.signInWithOAuth({
     provider: "google",
@@ -7,11 +9,6 @@ export async function signInWithGoogle() {
       redirectTo: window.location.origin,
     },
   });
-}
-
-export async function disconnectGoogle() {
-  // Keeps the same user id + saved game data, only removes the Google identity.
-  return await supabase.auth.unlinkIdentity({ provider: "google" });
 }
 
 export async function loadUserGameData(userId) {
@@ -103,6 +100,8 @@ export function scheduleSaveUserGameData(userId, gameData, delayMs = 600) {
 async function ensureSession() {
   const { data: existing } = await supabase.auth.getSession();
   if (existing?.session) return existing.session;
+
+  if (localStorage.getItem(FORCE_WELCOME_KEY) === "1") return null;
 
   const { data, error } = await supabase.auth.signInAnonymously();
   if (error) throw error;
